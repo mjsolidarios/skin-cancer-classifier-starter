@@ -54,11 +54,6 @@ def create_app(allowed_extensions, upload_folder='uploads', model_path='skin_can
       return jsonify({'error': 'No selected file'})
     
     if file and allowed_file(file.filename):
-      # Here you would:
-      # 1. Save the file
-      # 2. Process the image
-      # 3. Run it through your model
-      # 4. Return the prediction
       
       try:
         # Save and process image
