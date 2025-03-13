@@ -1,8 +1,10 @@
-from flask import Flask, render_template, request, jsonify
 import os
+
+from flask import Flask, render_template, request, jsonify
+from PIL import Image
 import tflite_runtime.interpreter as tflite
 import numpy as np
-from PIL import Image
+
 
 app = Flask(__name__)
 
