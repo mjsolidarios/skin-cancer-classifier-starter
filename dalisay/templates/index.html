@@ -72,7 +72,7 @@
                 if (data.error) {
                     result.innerHTML = `<p style="color: red;">Error: ${data.error}</p>`;
                 } else {
-                    result.innerHTML = `<p>Prediction: ${data.prediction}</p><p>Confidence: ${data.confidence}</p>`;
+                    result.innerHTML = `<p>Prediction: ${data.prediction}</p><p>Name: ${data.name}</p><p>Confidence: ${data.confidence}</p>`;
                 }
             } catch (error) {
                 result.style.display = 'block';

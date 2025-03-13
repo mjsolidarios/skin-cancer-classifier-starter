@@ -1,4 +1,4 @@
-import os
+import os, json
 
 from flask import Flask, render_template, request, jsonify
 from PIL import Image
@@ -75,8 +75,12 @@ def create_app(allowed_extensions, upload_folder='uploads', model_path='skin_can
         # Clean up
         os.remove(filename)
 
+        labels = json.loads(open(os.path.join(os.getcwd(), '..', 'skin_cancer_model/labels.json'), 'r').read())
+        name = [obj['name'] for obj in labels if obj['label'] == predicted_class]
+
         return jsonify({
             'prediction': predicted_class,
+            'name': name,
             'confidence': f'{confidence:.2%}'
         })
 
