@@ -14,7 +14,7 @@ IMG_SIZE = 224
 CLASS_NAMES = ['akiec', 'bcc', 'bkl', 'df', 'mel', 'nv', 'vasc']
 
 # Initialize TFLite interpreter
-interpreter = tflite.Interpreter(model_path=MODEL_PATH)
+interpreter = tflite.Interpreter(model_path=os.path.join(os.getcwd(), '..', MODEL_PATH))
 interpreter.allocate_tensors()
 
 # Get input and output tensors
