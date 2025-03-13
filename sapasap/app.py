@@ -8,61 +8,44 @@ import logging
 from google import genai
 from dotenv import load_dotenv, dotenv_values
 
-
 load_dotenv()
 config = dotenv_values(".env")
 
-
 client = genai.Client(api_key=config.get('GEMINI_API_KEY', ''))
-
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 TEMPLATE_DIR = os.path.join(BASE_DIR, "frontend")
+LABELS_FILE = os.path.join(BASE_DIR, "models/labels.json")
+MODEL_PATH = os.path.join(BASE_DIR, "models", "model.tflite")
 
 app = Flask(__name__, template_folder=TEMPLATE_DIR)
 
-
-UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-
-
-LABELS_FILE = os.path.join(BASE_DIR, "models/labels.json")
-
-def load_labels():
-    if os.path.exists(LABELS_FILE):
-        with open(LABELS_FILE, "r") as f:
-            label_data = json.load(f)
-        class_labels = [entry["name"] for entry in label_data]  
-      
-        return class_labels
-    else:
-        logger.error("labels.json file not found")
-        return []
-
-class_labels = load_labels()
-
 # Load TensorFlow Lite model
 def load_model():
-    MODEL_PATH = os.path.join(BASE_DIR, "models", "model.tflite")
-    
-
     try:
         interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
         interpreter.allocate_tensors()
         input_details = interpreter.get_input_details()
         output_details = interpreter.get_output_details()
         return interpreter, input_details, output_details
-        
     except Exception as e:
         logger.error(f"Error loading model: {e}")
         raise RuntimeError("Failed to load the model")
 
 interpreter, input_details, output_details = load_model()
+
+# Read labels from JSON on every request
+def load_labels():
+    if os.path.exists(LABELS_FILE):
+        with open(LABELS_FILE, "r") as f:
+            label_data = json.load(f)
+        return [entry["name"] for entry in label_data]
+    else:
+        logger.error("labels.json file not found")
+        return []
 
 def process_image(image_path):
     try:
@@ -79,7 +62,6 @@ def process_image(image_path):
         raise
 
 def generate_cancer_details(disease_name):
-    """Generate a three-sentence summary about the detected skin cancer."""
     try:
         response = client.models.generate_content(
             model="gemini-2.0-flash",
@@ -110,31 +92,22 @@ def upload_image():
         return jsonify({"error": "No selected file"}), 400
 
     try:
-        file_path = os.path.join(app.config["UPLOAD_FOLDER"], file.filename)
+        file_path = os.path.join(BASE_DIR, file.filename)
         file.save(file_path)
         logger.info(f"Image saved to {file_path}")
 
-        img = process_image(file_path).astype(np.float32)  
+        img = process_image(file_path).astype(np.float32)
 
         # Perform inference
         interpreter.set_tensor(input_details[0]["index"], img)
         interpreter.invoke()
         predictions = interpreter.get_tensor(output_details[0]["index"])
-        logger.info(f"Raw Predictions: {predictions}")
-        logger.info(f"Labels: {class_labels}")
-       
 
-
-   
         predicted_class_index = np.argmax(predictions)
-        logger.info(f"Predicted class index: {predicted_class_index}")
         confidence_score = float(predictions[0][predicted_class_index])
 
-        
-        if predicted_class_index < len(class_labels):
-            predicted_class = class_labels[predicted_class_index]
-        else:
-            predicted_class = "Unknown"
+        class_labels = load_labels()
+        predicted_class = class_labels[predicted_class_index] if predicted_class_index < len(class_labels) else "Unknown"
 
         ai_details = generate_cancer_details(predicted_class)
 
@@ -144,7 +117,10 @@ def upload_image():
             "ai_generated_info": ai_details
         }
 
-        logger.info(f"Prediction: {predicted_class}, Confidence: {confidence_score}")
+        # Delete file after processing
+        os.remove(file_path)
+        logger.info(f"Deleted file: {file_path}")
+
         return jsonify(response)
 
     except ValueError as e:
