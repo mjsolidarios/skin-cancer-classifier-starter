@@ -8,8 +8,6 @@ from werkzeug.utils import secure_filename
 import google.generativeai as genai
 from dotenv import load_dotenv, dotenv_values
 
-# Suppress TensorFlow logs
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # Suppress all logs except errors
 
 app = Flask(__name__)
 
