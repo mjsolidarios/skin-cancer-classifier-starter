@@ -8,7 +8,6 @@ from werkzeug.utils import secure_filename
 import google.generativeai as genai
 from dotenv import load_dotenv, dotenv_values
 
-
 app = Flask(__name__)
 
 # Load API key
@@ -18,7 +17,7 @@ config = dotenv_values('.env')
 genai.configure(api_key=config['GEMINI_API_KEY'])
 
 # Define the base directory for the model and label files
-base_dir = r'C:\Users\canet\Documents\3rd Year\skin-cancer-canete\CANETE\skin_cancer_model'
+base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'skin_cancer_model')
 
 # Load the TFLite model
 model_path = os.path.join(base_dir, 'model.tflite')
