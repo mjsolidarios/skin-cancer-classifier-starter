@@ -137,9 +137,15 @@ def predict():
             'description_and_treatment': description_and_treatment
         })
     except FileNotFoundError as e:
+        print(f'File not found error: {str(e)}')
         return jsonify({'error': str(e)}), 404
+    except ValueError as e:
+        print(f'Value error: {str(e)}')
+        return jsonify({'error': str(e)}), 400
     except Exception as e:
         print('Error during prediction:', str(e))
+        import traceback
+        traceback.print_exc()  # Print the full traceback
         return jsonify({'error': 'An error occurred during prediction.'}), 500
 
 if __name__ == '__main__':
