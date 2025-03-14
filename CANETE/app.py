@@ -87,6 +87,10 @@ def predict():
         if 'example' in request.form:
             example_image = request.form['example']
             file_path = os.path.join('static', 'images', example_image)
+            print(f"Looking for example image at: {file_path}")  # Debug statement
+
+            if not os.path.exists(file_path):
+                return jsonify({'error': f'Example image {example_image} not found.'}), 404
         else:
             if 'file' not in request.files:
                 return jsonify({'error': 'No file uploaded.'}), 400
