@@ -102,7 +102,11 @@ def predict():
             if not allowed_file(file.filename):
                 return jsonify({'error': 'Invalid file type. Only PNG, JPG, and JPEG are allowed.'}), 400
 
-            file_path = os.path.join('static/uploads', secure_filename(file.filename))
+            # Ensure the uploads directory exists
+            upload_folder = os.path.join('static', 'uploads')
+            os.makedirs(upload_folder, exist_ok=True)
+
+            file_path = os.path.join(upload_folder, secure_filename(file.filename))
             file.save(file_path)
 
         # Preprocess the image
@@ -143,4 +147,5 @@ def predict():
         return jsonify({'error': 'An error occurred during prediction.'}), 500
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
