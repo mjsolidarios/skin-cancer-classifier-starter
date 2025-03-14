@@ -13,10 +13,6 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # Suppress all logs except errors
 
 app = Flask(__name__)
 
-# Create necessary directories
-os.makedirs('static/uploads', exist_ok=True)
-os.makedirs('static/images', exist_ok=True)
-
 # Load API key from .env file
 load_dotenv()
 config = dotenv_values('.env')
@@ -88,83 +84,58 @@ def index():
 @app.route('/predict', methods=['POST'])
 def predict():
     try:
-        print("\n----- New prediction request -----")
-        print(f"Request form data: {request.form}")
-        print(f"Request files: {list(request.files.keys()) if request.files else 'No files'}")
-        
         if 'example' in request.form:
             example_image = request.form['example']
-            print(f"Using example image: {example_image}")
             file_path = os.path.join('static', 'images', example_image)
-            print(f"Looking for example image at: {file_path}")
-            
+            print(f"Looking for example image at: {file_path}")  # Debug statement
+
             if not os.path.exists(file_path):
-                print(f"ERROR: Example image not found at {file_path}")
                 return jsonify({'error': f'Example image {example_image} not found.'}), 404
-            print(f"Example image found at {file_path}")
-        elif 'file' in request.files:
-            file = request.files['file']
-            print(f"File uploaded: {file.filename}")
-            
-            if file.filename == '':
-                print("ERROR: Empty filename")
-                return jsonify({'error': 'No selected file.'}), 400
-                
-            if not allowed_file(file.filename):
-                print(f"ERROR: Invalid file type for {file.filename}")
-                return jsonify({'error': 'Invalid file type. Only PNG, JPG, and JPEG are allowed.'}), 400
-                
-            file_path = os.path.join('static/uploads', secure_filename(file.filename))
-            print(f"Saving file to: {file_path}")
-            file.save(file_path)
-            print(f"File saved successfully")
         else:
-            print("ERROR: No file or example in request")
-            return jsonify({'error': 'No file uploaded.'}), 400
+            if 'file' not in request.files:
+                return jsonify({'error': 'No file uploaded.'}), 400
+
+            file = request.files['file']
+            if file.filename == '':
+                return jsonify({'error': 'No selected file.'}), 400
+
+            if not allowed_file(file.filename):
+                return jsonify({'error': 'Invalid file type. Only PNG, JPG, and JPEG are allowed.'}), 400
+
+            file_path = os.path.join('static/uploads', secure_filename(file.filename))
+            file.save(file_path)
 
         # Preprocess the image
-        print("Preprocessing image...")
         input_data = preprocess_image(file_path)
-        
-        print("Running inference...")
+
+        # Perform inference
         interpreter.set_tensor(input_details[0]['index'], input_data)
         interpreter.invoke()
         predictions = interpreter.get_tensor(output_details[0]['index'])[0]
-        
+
         # Get the predicted label and confidence
         predicted_index = np.argmax(predictions)
         predicted_label = labels[predicted_index]
         predicted_name = label_names[predicted_label]
         confidence = float(predictions[predicted_index])
-        
-        print(f"Prediction results: {predicted_label}, {predicted_name}, {confidence}")
-        
-        # Clean up uploaded file if it was uploaded (not an example)
+
+        # Clean up uploaded file
         if 'file' in request.files and os.path.exists(file_path):
-            print(f"Removing temporary file: {file_path}")
             os.remove(file_path)
-        
+
         # Generate treatment and description using Google Generative AI
-        print("Generating description with Gemini...")
-        try:
-            model = genai.GenerativeModel('gemini-1.5-flash-latest')
-            response = model.generate_content(
-                f'Provide a detailed description and recommended treatment for {predicted_name} in 8 sentences.'
-            )
-            description_and_treatment = response.text
-            print("Description generated successfully")
-        except Exception as e:
-            print(f"Error generating description: {str(e)}")
-            description_and_treatment = f"Could not generate description for {predicted_name}. Please consult a medical professional for proper diagnosis and treatment."
-        
-        result = {
+        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        response = model.generate_content(
+            f'Provide a detailed description and recommended treatment for {predicted_name} in 8 sentences.'
+        )
+        description_and_treatment = response.text
+
+        return jsonify({
             'label': predicted_label,
             'name': predicted_name,
             'confidence': confidence,
             'description_and_treatment': description_and_treatment
-        }
-        print(f"Returning result: {result}")
-        return jsonify(result)
+        })
     except FileNotFoundError as e:
         print(f'File not found error: {str(e)}')
         return jsonify({'error': str(e)}), 404
@@ -177,10 +148,5 @@ def predict():
         traceback.print_exc()  # Print the full traceback
         return jsonify({'error': 'An error occurred during prediction.'}), 500
 
-# Simple test endpoint to verify the frontend-backend connection
-@app.route('/test', methods=['GET'])
-def test():
-    return jsonify({'status': 'success', 'message': 'API is working correctly'})
-
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000)
