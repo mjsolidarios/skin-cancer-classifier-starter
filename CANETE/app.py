@@ -18,7 +18,10 @@ config = dotenv_values('.env')
 genai.configure(api_key=config['GEMINI_API_KEY'])
 
 # Define the base directory for the model and label files
-base_dir = r'C:\Users\canet\Documents\3rd Year\skin-cancer-canete\CANETE\skin_cancer_model'
+base_dir = os.path.join(os.path.dirname(__file__), 'skin_cancer_model')
+model_path = os.path.join(base_dir, 'model.tflite')
+labels_path_txt = os.path.join(base_dir, 'labels.txt')
+labels_path_json = os.path.join(base_dir, 'labels.json')
 
 # Load the TFLite model
 model_path = os.path.join(base_dir, 'model.tflite')
@@ -116,5 +119,5 @@ def predict():
         print('Error during prediction:', str(e))
         return jsonify({'error': 'An error occurred during prediction.'}), 500
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+if __name__ == '__main__':
+    app.run(debug=True)
