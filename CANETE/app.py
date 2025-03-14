@@ -1,18 +1,24 @@
+import os
 from flask import Flask, request, jsonify, render_template
 import tensorflow as tf
 import numpy as np
 from PIL import Image
 import json
-import os
 from werkzeug.utils import secure_filename
 import google.generativeai as genai
 from dotenv import load_dotenv, dotenv_values
 
+# Suppress TensorFlow logs
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # Suppress all logs except errors
+
 app = Flask(__name__)
 
-# Load API key
+# Load API key from .env file
 load_dotenv()
 config = dotenv_values('.env')
+
+if 'GEMINI_API_KEY' not in config:
+    raise ValueError("GEMINI_API_KEY not found in .env file. Please ensure the .env file is correctly configured.")
 
 genai.configure(api_key=config['GEMINI_API_KEY'])
 
@@ -22,7 +28,7 @@ base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'skin_cancer
 # Load the TFLite model
 model_path = os.path.join(base_dir, 'model.tflite')
 if not os.path.exists(model_path):
-    raise FileNotFoundError(f'Model file not found at {model_path}')
+    raise FileNotFoundError(f'Model file not found at {model_path}. Please ensure the model file is in the correct directory.')
 
 interpreter = tf.lite.Interpreter(model_path=model_path)
 interpreter.allocate_tensors()
@@ -34,7 +40,7 @@ output_details = interpreter.get_output_details()
 # Load labels from labels.txt
 labels_path = os.path.join(base_dir, 'labels.txt')
 if not os.path.exists(labels_path):
-    raise FileNotFoundError(f'Labels file not found at {labels_path}')
+    raise FileNotFoundError(f'Labels file not found at {labels_path}. Please ensure the labels file is in the correct directory.')
 
 with open(labels_path, 'r') as f:
     labels = f.read().strip().split('\n')
@@ -42,7 +48,7 @@ with open(labels_path, 'r') as f:
 # Load label names from labels.json
 labels_json_path = os.path.join(base_dir, 'labels.json')
 if not os.path.exists(labels_json_path):
-    raise FileNotFoundError(f'Labels JSON file not found at {labels_json_path}')
+    raise FileNotFoundError(f'Labels JSON file not found at {labels_json_path}. Please ensure the labels JSON file is in the correct directory.')
 
 with open(labels_json_path, 'r') as f:
     label_names = {item['label']: item['name'] for item in json.load(f)}
@@ -54,11 +60,14 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def preprocess_image(image_path):
-    image = Image.open(image_path).convert('RGB')
-    image = image.resize((224, 224))  # Resize to match model's expected input size
-    image = np.array(image) / 255.0   # Normalize pixel values
-    image = np.expand_dims(image, axis=0).astype(np.float32)
-    return image
+    try:
+        image = Image.open(image_path).convert('RGB')
+        image = image.resize((224, 224))  # Resize to match model's expected input size
+        image = np.array(image) / 255.0   # Normalize pixel values
+        image = np.expand_dims(image, axis=0).astype(np.float32)
+        return image
+    except Exception as e:
+        raise ValueError(f"Error preprocessing image: {e}")
 
 @app.route('/')
 def index():
@@ -84,17 +93,21 @@ def predict():
             file_path = os.path.join('static/uploads', secure_filename(file.filename))
             file.save(file_path)
 
+        # Preprocess the image
         input_data = preprocess_image(file_path)
 
+        # Perform inference
         interpreter.set_tensor(input_details[0]['index'], input_data)
         interpreter.invoke()
         predictions = interpreter.get_tensor(output_details[0]['index'])[0]
 
+        # Get the predicted label and confidence
         predicted_index = np.argmax(predictions)
         predicted_label = labels[predicted_index]
         predicted_name = label_names[predicted_label]
         confidence = float(predictions[predicted_index])
 
+        # Clean up uploaded file
         if 'file' in request.files and os.path.exists(file_path):
             os.remove(file_path)
 
@@ -111,6 +124,8 @@ def predict():
             'confidence': confidence,
             'description_and_treatment': description_and_treatment
         })
+    except FileNotFoundError as e:
+        return jsonify({'error': str(e)}), 404
     except Exception as e:
         print('Error during prediction:', str(e))
         return jsonify({'error': 'An error occurred during prediction.'}), 500
