@@ -25,10 +25,18 @@ genai.configure(api_key=config['GEMINI_API_KEY'])
 # Define the base directory for the model and label files
 base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'skin_cancer_model')
 
+# Debug: Print the base directory
+print(f"Base directory: {base_dir}")
+
 # Load the TFLite model
 model_path = os.path.join(base_dir, 'model.tflite')
+print(f"Looking for model at: {model_path}")  # Debug statement
+
 if not os.path.exists(model_path):
-    raise FileNotFoundError(f'Model file not found at {model_path}. Please ensure the model file is in the correct directory.')
+    raise FileNotFoundError(
+        f'Model file not found at {model_path}. '
+        'Please ensure the "skin_cancer_model" directory and its contents are included in your deployment.'
+    )
 
 interpreter = tf.lite.Interpreter(model_path=model_path)
 interpreter.allocate_tensors()
