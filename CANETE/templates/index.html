@@ -151,6 +151,7 @@
 
     <!-- JavaScript for Drag-and-Drop, Image Selection, and Results Display -->
     <script>
+        // Modified JavaScript for handling example images
         const uploadArea = document.getElementById('uploadArea');
         const fileInput = document.getElementById('fileInput');
         const uploadForm = document.getElementById('uploadForm');
@@ -164,35 +165,35 @@
         const exampleImages = document.querySelectorAll('.example-image');
         const errorMessage = document.getElementById('errorMessage');
         const loadingSpinner = document.getElementById('loadingSpinner');
-
+    
         let selectedFile = null; // Store the selected file
         let selectedExample = null; // Store the selected example image name
-
+    
         // Handle file upload or drag-and-drop
         uploadArea.addEventListener('click', () => fileInput.click());
-
+    
         uploadArea.addEventListener('dragover', (e) => {
             e.preventDefault();
             uploadArea.style.backgroundColor = 'rgba(59, 130, 246, 0.1)';
         });
-
+    
         uploadArea.addEventListener('dragleave', () => {
             uploadArea.style.backgroundColor = '';
         });
-
+    
         uploadArea.addEventListener('drop', (e) => {
             e.preventDefault();
             fileInput.files = e.dataTransfer.files;
             handleFileUpload(fileInput.files[0]);
         });
-
+    
         // Handle file input change
         fileInput.addEventListener('change', (e) => {
             if (e.target.files && e.target.files[0]) {
                 handleFileUpload(e.target.files[0]);
             }
         });
-
+    
         // Handle file upload
         function handleFileUpload(file) {
             selectedFile = file; // Store the selected file
@@ -206,7 +207,7 @@
             };
             reader.readAsDataURL(file);
         }
-
+    
         // Handle example image clicks
         exampleImages.forEach((image) => {
             image.addEventListener('click', () => {
@@ -220,19 +221,19 @@
                 errorMessage.classList.add('hidden'); // Clear error message
             });
         });
-
-        // Handle form submission
+    
+        // Handle form submission with improved error handling
         uploadForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-
+    
             if (!selectedFile && !selectedExample) {
                 errorMessage.textContent = 'Please select an image first.';
                 errorMessage.classList.remove('hidden');
                 return;
             }
-
+    
             const formData = new FormData();
-
+    
             if (selectedFile) {
                 // If it's a file upload
                 formData.append('file', selectedFile);
@@ -240,31 +241,33 @@
                 // If it's an example image
                 formData.append('example', selectedExample);
             }
-
+    
             try {
                 // Show the loading spinner
                 loadingSpinner.classList.remove('hidden');
-
+                errorMessage.classList.add('hidden');
+    
                 const response = await fetch('/predict', {
                     method: 'POST',
                     body: formData,
                 });
-
-                if (!response.ok) {
-                    throw new Error('Prediction failed');
-                }
-
+    
                 const result = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(result.error || 'Prediction failed');
+                }
+    
                 resultLabel.textContent = result.label;
                 resultName.textContent = result.name;
-                resultConfidence.textContent = result.confidence.toFixed(2);
+                resultConfidence.textContent = (result.confidence * 100).toFixed(2) + '%';
                 resultDescriptionAndTreatment.textContent = result.description_and_treatment;
-
+    
                 // Show the results card
                 resultsCard.classList.remove('hidden');
             } catch (error) {
                 console.error('Error:', error);
-                errorMessage.textContent = 'An error occurred during prediction.';
+                errorMessage.textContent = error.message || 'An error occurred during prediction.';
                 errorMessage.classList.remove('hidden');
             } finally {
                 // Hide the loading spinner

@@ -135,12 +135,45 @@ def predict():
         # Handle example images or uploaded files
         if 'example' in request.form:
             example_image = request.form['example']
-            file_path = os.path.join('static', 'images', example_image)
-            logger.info(f"Looking for example image at: {file_path}")
-
-            if not os.path.exists(file_path):
-                logger.error(f"Example image not found: {file_path}")
-                return jsonify({'error': f'Example image {example_image} not found.'}), 404
+            logger.info(f"Example image requested: {example_image}")
+            
+            # Try different possible paths for the example image
+            possible_paths = [
+                os.path.join('static', 'images', example_image),  # Relative path
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'images', example_image),  # Absolute path
+                os.path.abspath(os.path.join('static', 'images', example_image))  # Another absolute path format
+            ]
+            
+            # Try to find the file in any of the possible locations
+            for path in possible_paths:
+                logger.info(f"Checking path: {path}")
+                if os.path.exists(path):
+                    file_path = path
+                    logger.info(f"Found example image at: {file_path}")
+                    break
+            
+            # If we still couldn't find the file
+            if file_path is None or not os.path.exists(file_path):
+                logger.error(f"Example image not found in any of the checked paths")
+                
+                # Debug directory contents
+                try:
+                    static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static')
+                    if os.path.exists(static_dir):
+                        logger.info(f"Static directory exists. Contents: {os.listdir(static_dir)}")
+                        images_dir = os.path.join(static_dir, 'images')
+                        if os.path.exists(images_dir):
+                            logger.info(f"Images directory exists. Contents: {os.listdir(images_dir)}")
+                        else:
+                            logger.error(f"Images directory doesn't exist at {images_dir}")
+                    else:
+                        logger.error(f"Static directory doesn't exist at {static_dir}")
+                except Exception as e:
+                    logger.error(f"Error checking directories: {str(e)}")
+                
+                return jsonify({
+                    'error': f'Example image {example_image} not found. Please upload your own image instead.'
+                }), 404
         else:
             if 'file' not in request.files:
                 logger.warning("No file uploaded")
@@ -163,10 +196,17 @@ def predict():
             file.save(file_path)
             logger.info(f"File saved to {file_path}")
 
-        # Check if file exists
+        # Verify file exists and is readable before proceeding
         if not os.path.exists(file_path):
             logger.error(f"File does not exist: {file_path}")
             return jsonify({'error': 'File not found after upload.'}), 500
+            
+        try:
+            with open(file_path, 'rb') as f:
+                logger.info(f"File is readable and has size: {os.path.getsize(file_path)} bytes")
+        except Exception as e:
+            logger.error(f"File exists but cannot be read: {str(e)}")
+            return jsonify({'error': 'File cannot be read.'}), 500
 
         # Preprocess the image
         try:
@@ -198,7 +238,7 @@ def predict():
         confidence = float(predictions[predicted_index])
         logger.info(f"Prediction: {predicted_name} ({predicted_label}) with confidence {confidence:.4f}")
 
-        # Clean up uploaded file if needed
+        # Clean up uploaded file if needed - but not example images
         if 'file' in request.files and os.path.exists(file_path):
             try:
                 os.remove(file_path)
