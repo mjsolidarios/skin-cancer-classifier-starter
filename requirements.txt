@@ -1,7 +1,0 @@
-flask
-tensorflow
-pillow
-numpy
-python-dotenv
-werkzeug
-gunicorn
