@@ -3,6 +3,7 @@ tensorflow
 pillow
 numpy
 genai
+google-generativeai
 python-dotenv
 werkzeug
 gunicorn
