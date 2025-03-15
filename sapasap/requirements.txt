@@ -2,6 +2,7 @@ flask
 tensorflow
 pillow
 numpy
+genai
 python-dotenv
 werkzeug
 gunicorn
