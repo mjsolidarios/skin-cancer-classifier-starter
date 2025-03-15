@@ -5,13 +5,13 @@ from PIL import Image, UnidentifiedImageError
 import tensorflow as tf
 import json
 import logging
-from google import genai
+import google.generativeai as genai
 from dotenv import load_dotenv, dotenv_values
 
 load_dotenv()
-config = dotenv_values(".env")
 
-client = genai.Client(api_key=config.get('GEMINI_API_KEY', ''))
+
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -63,8 +63,9 @@ def process_image(image_path):
 
 def generate_cancer_details(disease_name):
     try:
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
+        model="gemini-2.0-flash"
+        response = model.generate_content(
+           
             contents=[
                 f"Provide a concise 3-sentence description of {disease_name}, including causes, risk factors, and possible treatments."
             ]
