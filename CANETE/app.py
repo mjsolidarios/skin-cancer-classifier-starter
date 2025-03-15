@@ -6,60 +6,98 @@ from PIL import Image
 import json
 from werkzeug.utils import secure_filename
 import google.generativeai as genai
-from dotenv import load_dotenv, dotenv_values
+from dotenv import load_dotenv
 
 # Suppress TensorFlow logs
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # Suppress all logs except errors
 
 app = Flask(__name__)
 
-# Load API key from .env file
-load_dotenv()
-config = dotenv_values('.env')
+# Set up logging
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-if 'GEMINI_API_KEY' not in config:
-    raise ValueError("GEMINI_API_KEY not found in .env file. Please ensure the .env file is correctly configured.")
+# Handle API key - try environment variable first, then .env file
+API_KEY = os.environ.get('GEMINI_API_KEY')
+if not API_KEY:
+    # Try loading from .env as fallback
+    load_dotenv()
+    API_KEY = os.environ.get('GEMINI_API_KEY')
+    
+if not API_KEY:
+    logger.error("GEMINI_API_KEY not found in environment variables or .env file")
+    raise ValueError("GEMINI_API_KEY not found. Please set this environment variable in Render dashboard.")
 
-genai.configure(api_key=config['GEMINI_API_KEY'])
+genai.configure(api_key=API_KEY)
+
+# Create necessary directories
+for directory in ['static/uploads', 'static/images']:
+    os.makedirs(directory, exist_ok=True)
 
 # Define the base directory for the model and label files
+# For Render, ensure these files are in your repository
 base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'skin_cancer_model')
+logger.info(f"Base directory: {base_dir}")
 
-# Debug: Print the base directory
-print(f"Base directory: {base_dir}")
+# Create the model directory if it doesn't exist
+os.makedirs(base_dir, exist_ok=True)
+
+# Check if model directory has contents
+try:
+    dir_contents = os.listdir(base_dir)
+    logger.info(f"Contents of {base_dir}: {dir_contents}")
+except Exception as e:
+    logger.warning(f"Couldn't list directory contents: {str(e)}")
 
 # Load the TFLite model
 model_path = os.path.join(base_dir, 'model.tflite')
-print(f"Looking for model at: {model_path}")  # Debug statement
+logger.info(f"Looking for model at: {model_path}")
 
 if not os.path.exists(model_path):
+    logger.error(f"Model file not found at {model_path}")
     raise FileNotFoundError(
         f'Model file not found at {model_path}. '
         'Please ensure the "skin_cancer_model" directory and its contents are included in your deployment.'
     )
 
-interpreter = tf.lite.Interpreter(model_path=model_path)
-interpreter.allocate_tensors()
-
-# Get input and output details
-input_details = interpreter.get_input_details()
-output_details = interpreter.get_output_details()
+try:
+    interpreter = tf.lite.Interpreter(model_path=model_path)
+    interpreter.allocate_tensors()
+    logger.info("TF Lite model loaded successfully")
+    
+    # Get input and output details
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
+    logger.info(f"Model input shape: {input_details[0]['shape']}")
+except Exception as e:
+    logger.error(f"Error loading TF Lite model: {str(e)}")
+    raise
 
 # Load labels from labels.txt
 labels_path = os.path.join(base_dir, 'labels.txt')
 if not os.path.exists(labels_path):
-    raise FileNotFoundError(f'Labels file not found at {labels_path}. Please ensure the labels file is in the correct directory.')
+    logger.error(f"Labels file not found at {labels_path}")
+    raise FileNotFoundError(f'Labels file not found at {labels_path}. Please check your deployment.')
 
 with open(labels_path, 'r') as f:
     labels = f.read().strip().split('\n')
+    logger.info(f"Loaded {len(labels)} labels")
 
 # Load label names from labels.json
 labels_json_path = os.path.join(base_dir, 'labels.json')
 if not os.path.exists(labels_json_path):
-    raise FileNotFoundError(f'Labels JSON file not found at {labels_json_path}. Please ensure the labels JSON file is in the correct directory.')
+    logger.error(f"Labels JSON file not found at {labels_json_path}")
+    raise FileNotFoundError(f'Labels JSON file not found at {labels_json_path}. Please check your deployment.')
 
 with open(labels_json_path, 'r') as f:
-    label_names = {item['label']: item['name'] for item in json.load(f)}
+    try:
+        label_data = json.load(f)
+        label_names = {item['label']: item['name'] for item in label_data}
+        logger.info(f"Loaded {len(label_names)} label names")
+    except json.JSONDecodeError as e:
+        logger.error(f"Error parsing labels.json: {str(e)}")
+        raise
 
 # Allowed file extensions
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
@@ -69,37 +107,52 @@ def allowed_file(filename):
 
 def preprocess_image(image_path):
     try:
+        logger.info(f"Preprocessing image: {image_path}")
         image = Image.open(image_path).convert('RGB')
         image = image.resize((224, 224))  # Resize to match model's expected input size
         image = np.array(image) / 255.0   # Normalize pixel values
         image = np.expand_dims(image, axis=0).astype(np.float32)
         return image
     except Exception as e:
+        logger.error(f"Error preprocessing image: {str(e)}")
         raise ValueError(f"Error preprocessing image: {e}")
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
+@app.route('/health')
+def health():
+    """Health check endpoint for monitoring"""
+    return jsonify({'status': 'healthy', 'model_loaded': True})
+
 @app.route('/predict', methods=['POST'])
 def predict():
     try:
+        logger.info("Prediction request received")
+        file_path = None
+        
+        # Handle example images or uploaded files
         if 'example' in request.form:
             example_image = request.form['example']
             file_path = os.path.join('static', 'images', example_image)
-            print(f"Looking for example image at: {file_path}")  # Debug statement
+            logger.info(f"Looking for example image at: {file_path}")
 
             if not os.path.exists(file_path):
+                logger.error(f"Example image not found: {file_path}")
                 return jsonify({'error': f'Example image {example_image} not found.'}), 404
         else:
             if 'file' not in request.files:
+                logger.warning("No file uploaded")
                 return jsonify({'error': 'No file uploaded.'}), 400
 
             file = request.files['file']
             if file.filename == '':
+                logger.warning("Empty filename")
                 return jsonify({'error': 'No selected file.'}), 400
 
             if not allowed_file(file.filename):
+                logger.warning(f"Invalid file type: {file.filename}")
                 return jsonify({'error': 'Invalid file type. Only PNG, JPG, and JPEG are allowed.'}), 400
 
             # Ensure the uploads directory exists
@@ -108,31 +161,63 @@ def predict():
 
             file_path = os.path.join(upload_folder, secure_filename(file.filename))
             file.save(file_path)
+            logger.info(f"File saved to {file_path}")
+
+        # Check if file exists
+        if not os.path.exists(file_path):
+            logger.error(f"File does not exist: {file_path}")
+            return jsonify({'error': 'File not found after upload.'}), 500
 
         # Preprocess the image
-        input_data = preprocess_image(file_path)
+        try:
+            input_data = preprocess_image(file_path)
+        except Exception as e:
+            logger.error(f"Preprocessing error: {str(e)}")
+            return jsonify({'error': f'Error processing image: {str(e)}'}), 500
 
         # Perform inference
-        interpreter.set_tensor(input_details[0]['index'], input_data)
-        interpreter.invoke()
-        predictions = interpreter.get_tensor(output_details[0]['index'])[0]
+        try:
+            interpreter.set_tensor(input_details[0]['index'], input_data)
+            interpreter.invoke()
+            predictions = interpreter.get_tensor(output_details[0]['index'])[0]
+            logger.info(f"Prediction successful, raw output: {predictions[:3]}...")  # Log first 3 values
+        except Exception as e:
+            logger.error(f"Inference error: {str(e)}")
+            return jsonify({'error': f'Error during model inference: {str(e)}'}), 500
 
         # Get the predicted label and confidence
         predicted_index = np.argmax(predictions)
         predicted_label = labels[predicted_index]
+        
+        # Check if predicted label exists in label names
+        if predicted_label not in label_names:
+            logger.error(f"Label {predicted_label} not found in label_names dictionary")
+            return jsonify({'error': f'Unknown label: {predicted_label}'}), 500
+            
         predicted_name = label_names[predicted_label]
         confidence = float(predictions[predicted_index])
+        logger.info(f"Prediction: {predicted_name} ({predicted_label}) with confidence {confidence:.4f}")
 
-        # Clean up uploaded file
+        # Clean up uploaded file if needed
         if 'file' in request.files and os.path.exists(file_path):
-            os.remove(file_path)
+            try:
+                os.remove(file_path)
+                logger.info(f"Removed temporary file: {file_path}")
+            except Exception as e:
+                logger.warning(f"Could not remove file {file_path}: {str(e)}")
 
         # Generate treatment and description using Google Generative AI
-        model = genai.GenerativeModel('gemini-1.5-flash-latest')
-        response = model.generate_content(
-            f'Provide a detailed description and recommended treatment for {predicted_name} in 8 sentences.'
-        )
-        description_and_treatment = response.text
+        try:
+            model = genai.GenerativeModel('gemini-1.5-flash-latest')
+            prompt = f'Provide a detailed description and recommended treatment for {predicted_name} in 8 sentences.'
+            logger.info(f"Sending prompt to Gemini: {prompt}")
+            
+            response = model.generate_content(prompt)
+            description_and_treatment = response.text
+            logger.info("Generated treatment description successfully")
+        except Exception as e:
+            logger.error(f"Gemini API error: {str(e)}")
+            description_and_treatment = f"Could not generate description for {predicted_name}. Please consult a healthcare professional for diagnosis and treatment."
 
         return jsonify({
             'label': predicted_label,
@@ -140,12 +225,13 @@ def predict():
             'confidence': confidence,
             'description_and_treatment': description_and_treatment
         })
-    except FileNotFoundError as e:
-        return jsonify({'error': str(e)}), 404
     except Exception as e:
-        print('Error during prediction:', str(e))
-        return jsonify({'error': 'An error occurred during prediction.'}), 500
+        logger.error(f"Unexpected error during prediction: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return jsonify({'error': f'An error occurred during prediction: {str(e)}'}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
+    logger.info(f"Starting server on port {port}")
     app.run(host="0.0.0.0", port=port)
