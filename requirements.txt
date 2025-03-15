@@ -1,4 +1,7 @@
 flask
-gunicorn==21.2.0
-numpy==2.2.3
-
+tensorflow
+pillow
+numpy
+python-dotenv
+werkzeug
+gunicorn
