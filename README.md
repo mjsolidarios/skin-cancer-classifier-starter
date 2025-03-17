@@ -93,7 +93,7 @@ Visit `http://localhost:5000` in your browser to access the app.
 
 ## Application Screenshot
 
-![Application Screenshot](static/images/web.jpg)
+![Web Application Preview](static/images/web.jpg)
 
 ---
 
